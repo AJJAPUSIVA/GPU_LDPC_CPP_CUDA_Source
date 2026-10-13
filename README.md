@@ -36,4 +36,3 @@ See `include/nrldpc/ldpc.hpp` and `tests/test_codec.cu`. `Codec::encode`, `Codec
 
 ## Repo relationship
 The referenced repo benchmarks Sionna's Python/TF LDPC decoder, not a reusable C++ CUDA encoder. This source project is an independent CUDA implementation informed by its benchmarking approach; it does not claim to port proprietary hardware APIs or its TensorFlow internals.
-# GPU_LDPC_CPP_CUDA_Source
