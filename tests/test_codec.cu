@@ -31,6 +31,18 @@ int main(int argc,char**argv){
         codec.decode(d_llr,d_dec,batch,10);
         nrldpc::cuda_check(cudaMemcpy(recovered.data(),d_dec,recovered.size(),cudaMemcpyDeviceToHost),"read decode");
         if(bits!=recovered){std::cerr<<"noiseless decode mismatch\n";return 1;}
+        // Exercise the forward/backward kernel with multiple normalization
+        // values and an independent non-default CUDA stream.
+        cudaStream_t second{};
+        nrldpc::cuda_check(cudaStreamCreate(&second),"create test stream");
+        for(float alpha: {0.5f, 0.8f, 1.0f}) {
+            codec.decode(d_llr,d_dec,batch,12,alpha,second);
+            nrldpc::cuda_check(cudaStreamSynchronize(second),"sync test stream");
+            nrldpc::cuda_check(cudaMemcpy(recovered.data(),d_dec,recovered.size(),
+                                         cudaMemcpyDeviceToHost),"read FB decode");
+            if(bits!=recovered){std::cerr<<"FB decode mismatch\n";return 1;}
+        }
+        nrldpc::cuda_check(cudaStreamDestroy(second),"destroy test stream");
         cudaFree(d_in);cudaFree(d_bits);cudaFree(d_valid);cudaFree(d_dec);cudaFree(d_llr);
         std::cout<<"PASS: GPU-only encode, parity, noiseless decode ("<<batch<<" codewords)\n";
     }catch(const std::exception& ex){std::cerr<<"ERROR: "<<ex.what()<<"\n";return 1;}

@@ -13,6 +13,14 @@ void Matrix::validate() const {
        shifts.size()!=size_t(rows)*cols || rows!=cols-kb)
         throw std::invalid_argument("invalid QC parity-check matrix geometry");
     for(int s: shifts) if(s< -1 || s>=z) throw std::invalid_argument("shift outside [-1,Z)");
+    // The GPU forward/backward kernel reserves 64 register slots per lane.
+    // Reject unsupported row degrees rather than overflow local storage.
+    for(int r=0;r<rows;++r){
+        int degree=0;
+        for(int c=0;c<cols;++c) degree+=(shifts[r*cols+c]>=0);
+        if(degree<2 || degree>64)
+            throw std::invalid_argument("QC row degree must be in [2,64]");
+    }
 }
 Matrix load_matrix(const std::string& path) {
     std::ifstream in(path);

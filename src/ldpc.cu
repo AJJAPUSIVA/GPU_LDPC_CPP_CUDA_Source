@@ -106,23 +106,35 @@ __global__ void decode_layered(const int* offsets,const int* cols,const int* shi
     for(int it=0;it<iterations;++it){
         for(int r=0;r<R;++r){
             for(int k=t;k<Z;k+=blockDim.x){
-                float min1=1.e30f,min2=1.e30f;
-                int argmin=-1,sign=0;
-                for(int e=offsets[r];e<offsets[r+1];++e){
+                // Algorithm-5-inspired register-backed suffix minimum reuse.
+                // Each lane owns one check node in the current QC row.
+                // No CPU decoding, no atomics for variable updates.
+                constexpr int MAX_DEGREE=64;
+                float suffix[MAX_DEGREE];
+                int begin=offsets[r], end=offsets[r+1];
+                int sign=0;
+                float minimum=1.e30f;
+                // Backward pass: suffix[e] = min_{j >= e} |q_j|.
+                for(int e=end-1;e>=begin;--e){
                     int idx=cols[e]*Z+(k+shifts[e])%Z;
                     float q=L[idx]-msg[e*Z+k];
-                    float a=fabsf(q);
-                    if(a<min1){min2=min1;min1=a;argmin=e;}
-                    else if(a<min2)min2=a;
+                    minimum=fminf(minimum,fabsf(q));
+                    suffix[e-begin]=minimum;
                     sign^=(q<0.f);
                 }
-                for(int e=offsets[r];e<offsets[r+1];++e){
+                // Forward pass: output uses min of all other edges.
+                // Circulant edges address distinct variables within each
+                // check-node layer, so updated L values do not perturb q.
+                float prefix=1.e30f;
+                for(int e=begin;e<end;++e){
                     int idx=cols[e]*Z+(k+shifts[e])%Z;
                     float q=L[idx]-msg[e*Z+k];
-                    float v=alpha*(e==argmin?min2:min1);
+                    float right=(e+1<end)?suffix[e+1-begin]:1.e30f;
+                    float v=alpha*fminf(prefix,right);
                     if(sign^(q<0.f))v=-v;
                     msg[e*Z+k]=v;
                     L[idx]=q+v;
+                    prefix=fminf(prefix,fabsf(q));
                 }
             }
             __syncthreads();
