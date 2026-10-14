@@ -1,4 +1,3 @@
-
 name: LDPC CPU Tests
 
 on:
@@ -11,39 +10,36 @@ on:
 jobs:
   cpu-test:
     runs-on: ubuntu-24.04
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Install compiler and CMake
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake g++ python3
-
-      - name: Show CPU features
+      - name: Report CPU features
         run: |
           lscpu
           grep -m1 '^flags' /proc/cpuinfo || true
-
       - name: Configure CPU-only build
         run: |
           cmake -S . -B build-cpu \
             -DNRLDPC_ENABLE_CPU=ON \
             -DNRLDPC_ENABLE_CUDA=OFF \
             -DCMAKE_BUILD_TYPE=Release
-
       - name: Compile
         run: cmake --build build-cpu -j 2
-
-      - name: Run correctness tests
+      - name: Run portable correctness tests
         run: ctest --test-dir build-cpu --output-on-failure
-      
-      - name: Run AVX-512 CPU benchmark
+      - name: Require AVX-512 and compare decoded outputs
         run: |
-          if grep -qw avx512f /proc/cpuinfo; then
-            ./build-cpu/ldpc_cpu_bench \
-              matrices/toy_qc_z4.txt 1024 10
-          else
-            echo "AVX-512 unavailable; skipping benchmark"
-          fi
+          ./build-cpu/ldpc_cpu_test \
+            matrices/toy_qc_z4.txt --require-avx512
+      - name: Benchmark scalar on same host
+        run: |
+          ./build-cpu/ldpc_cpu_bench \
+            matrices/toy_qc_z4.txt 1024 10 scalar
+      - name: Benchmark AVX-512 on same host
+        run: |
+          ./build-cpu/ldpc_cpu_bench \
+            matrices/toy_qc_z4.txt 1024 10 avx512

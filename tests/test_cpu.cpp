@@ -2,10 +2,15 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 int main(int argc,char**argv){
-    if(argc!=2){std::cerr<<"usage: ldpc_cpu_test matrix.txt\n";return 2;}
+    if(argc<2 || argc>3){std::cerr<<"usage: ldpc_cpu_test matrix.txt [--require-avx512]\n";return 2;}
     try{
+        const bool required=argc==3 && std::string(argv[2])=="--require-avx512";
+        if(argc==3 && !required)throw std::invalid_argument("unknown test option");
+        if(required && !nrldpc::cpu::avx512_available())
+            throw std::runtime_error("AVX-512 required but unavailable; refusing skipped test");
         auto h=nrldpc::cpu::load_matrix(argv[1]);
         constexpr int batch=19;
         const int N=h.codeword_bits();
@@ -32,6 +37,7 @@ int main(int argc,char**argv){
             nrldpc::cpu::decode_avx512(h,llr.data(),vectorized.data(),batch,8);
             if(vectorized!=scalar)throw std::runtime_error("AVX-512 noisy-case mismatch");
         }
+        if(required)std::cout<<"PASS: required AVX-512 executed; noiseless and perturbed inputs exactly match scalar\n";
         // Invalid channel evidence must not silently pass as a valid codeword.
         std::vector<uint8_t> corrupt(N,0);corrupt[0]=1;
         if(nrldpc::cpu::check(h,corrupt.data()))throw std::runtime_error("syndrome missed corruption");
