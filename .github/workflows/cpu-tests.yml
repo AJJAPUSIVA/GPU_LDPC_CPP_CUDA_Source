@@ -38,7 +38,8 @@ jobs:
 
       - name: Run correctness tests
         run: ctest --test-dir build-cpu --output-on-failure
-            - name: Run AVX-512 CPU benchmark
+      
+      - name: Run AVX-512 CPU benchmark
         run: |
           if grep -qw avx512f /proc/cpuinfo; then
             ./build-cpu/ldpc_cpu_bench \
