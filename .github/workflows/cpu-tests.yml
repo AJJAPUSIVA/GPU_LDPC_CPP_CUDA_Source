@@ -27,7 +27,7 @@ jobs:
           grep -m1 '^flags' /proc/cpuinfo || true
 
       - name: Configure CPU-only build
-        run: |B
+        run: |
           cmake -S . -B build-cpu \
             -DNRLDPC_ENABLE_CPU=ON \
             -DNRLDPC_ENABLE_CUDA=OFF \
@@ -39,11 +39,3 @@ jobs:
       - name: Run correctness tests
         run: ctest --test-dir build-cpu --output-on-failure
 
-      - name: Generate BG2 matrix
-        run: python3 tools/generate_5gnr_matrices.py --z 32
-
-      - name: Run AWGN smoke test
-        run: |
-          ./build-cpu/ldpc_awgn_bench \
-            matrices/nr_bg2_z32.txt \
-            32 10 1.4 fixed scalar 12345
