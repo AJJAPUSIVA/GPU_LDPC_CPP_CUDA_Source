@@ -36,21 +36,3 @@ See `include/nrldpc/ldpc.hpp` and `tests/test_codec.cu`. `Codec::encode`, `Codec
 
 ## Repo relationship
 The referenced repo benchmarks Sionna's Python/TF LDPC decoder, not a reusable C++ CUDA encoder. This source project is an independent CUDA implementation informed by its benchmarking approach; it does not claim to port proprietary hardware APIs or its TensorFlow internals.
-# GPU_LDPC_CPP_CUDA_Source
-# GPU_LDPC_CPP_CUDA_Source
-
-## GPU forward/backward layered decoder upgrade
-
-The decoder check-node processing now uses a register-local backward suffix
-minimum and a forward prefix minimum to produce the normalized min-sum
-message for each incident edge. The implementation is inspired by Algorithm 5
-of Usatyuk and Egorov (IEEE DSPA 2025), rather than a verbatim implementation.
-It retains QC-layer synchronization and syndrome early termination, and it
-adds a hard matrix row-degree bound of [2,64]. CUDA computation stays on the
-GPU; the CPU only parses matrices and launches kernels.
-
-Validation is required on an RTX 4090 (`sm_89`). The toy round-trip tests
-now cover three alpha values and a non-default CUDA stream. The change does
-not yet provide full 3GPP BG1/BG2 matrices, GPU rate matching, HARQ or CRC.
-The forward/backward approach may reduce comparison work, but performance
-improvements are **not yet measured** and register pressure could offset gains.
