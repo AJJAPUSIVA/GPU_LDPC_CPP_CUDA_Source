@@ -64,9 +64,10 @@ bool check(const Matrix& h,const uint8_t* b){
     }
     return true;
 }
-void decode_scalar(const Matrix& h,const float* input,uint8_t* output,int batch,int it,float alpha){
+DecodeResult decode_scalar_detailed(const Matrix& h,const float* input,uint8_t* output,int batch,int it,float alpha,bool stop_early){
     args(h,batch,it,alpha);Graph g(h);const int n=h.codeword_bits(),z=h.z;
     std::vector<float> L(n), msg(static_cast<size_t>(g.cols.size())*z);
+    DecodeResult stats;stats.iterations_used.resize(batch);stats.syndrome_ok.resize(batch);
     for(int b=0;b<batch;b++){
         std::copy(input+static_cast<size_t>(b)*n,input+static_cast<size_t>(b+1)*n,L.begin());
         std::fill(msg.begin(),msg.end(),0.f);
@@ -89,9 +90,15 @@ void decode_scalar(const Matrix& h,const float* input,uint8_t* output,int batch,
                 }
             }
             for(int i=0;i<n;i++)output[static_cast<size_t>(b)*n+i]=(L[i]<0);
-            if(check(h,output+static_cast<size_t>(b)*n))break;
+            bool ok=check(h,output+static_cast<size_t>(b)*n);
+            stats.iterations_used[b]=iteration+1;stats.syndrome_ok[b]=ok;
+            if(stop_early && ok)break;
         }
     }
+    return stats;
+}
+void decode_scalar(const Matrix& h,const float* input,uint8_t* output,int batch,int it,float alpha){
+    (void)decode_scalar_detailed(h,input,output,batch,it,alpha,true);
 }
 bool avx512_available(){
 #if NRLDPC_AVX512_IMPL
@@ -104,7 +111,7 @@ bool avx512_available(){
 // 16 codewords processed in lockstep, vectorized across the batch dimension.
 // Data is transposed into [VN][lane] so LLR updates are contiguous AVX-512 loads.
 NRLDPC_TARGET_AVX512
-static void decode_avx512_impl(const Matrix& h,const Graph& g,const float* input,uint8_t* output,int batch,int it,float alpha){
+static DecodeResult decode_avx512_impl(const Matrix& h,const Graph& g,const float* input,uint8_t* output,int batch,int it,float alpha,bool stop_early){
     constexpr int W=16;
     const int n=h.codeword_bits(),z=h.z,edges=int(g.cols.size());
     const __m512 zero=_mm512_setzero_ps(),scale=_mm512_set1_ps(alpha);
@@ -112,6 +119,7 @@ static void decode_avx512_impl(const Matrix& h,const Graph& g,const float* input
     std::vector<float> L(static_cast<size_t>(n)*W),msg(static_cast<size_t>(edges)*z*W);
     std::vector<float> prefix(static_cast<size_t>(h.cols+1)*W);
     std::vector<float> suffix(static_cast<size_t>(h.cols+1)*W);
+    DecodeResult stats;stats.iterations_used.resize(batch);stats.syndrome_ok.resize(batch);
     for(int start=0;start<batch;start+=W){
         const int active=std::min(W,batch-start);
         for(int i=0;i<n;i++)for(int lane=0;lane<W;lane++)
@@ -157,20 +165,27 @@ static void decode_avx512_impl(const Matrix& h,const Graph& g,const float* input
             for(int lane=0;lane<active;lane++){
                 uint8_t* dest=output+static_cast<size_t>(start+lane)*n;
                 for(int i=0;i<n;i++)dest[i]=L[static_cast<size_t>(i)*W+lane]<0;
-                if(!check(h,dest))allgood=false;
+                bool ok=check(h,dest);
+                stats.iterations_used[start+lane]=iteration+1;stats.syndrome_ok[start+lane]=ok;
+                if(!ok)allgood=false;
             }
-            if(allgood)break;
+            if(stop_early && allgood)break;
         }
     }
+    return stats;
 }
 #endif
-void decode_avx512(const Matrix& h,const float* llr,uint8_t* bits,int batch,int it,float alpha){
+DecodeResult decode_avx512_detailed(const Matrix& h,const float* llr,uint8_t* bits,int batch,int it,float alpha,bool stop_early){
     args(h,batch,it,alpha);
 #if NRLDPC_AVX512_IMPL
     if(!avx512_available())throw std::runtime_error("AVX-512F unavailable on this CPU");
-    Graph g(h);decode_avx512_impl(h,g,llr,bits,batch,it,alpha);
+    Graph g(h);return decode_avx512_impl(h,g,llr,bits,batch,it,alpha,stop_early);
 #else
+    (void)llr;(void)bits;(void)stop_early;
     throw std::runtime_error("AVX-512 backend requires x86 GCC/Clang");
 #endif
+}
+void decode_avx512(const Matrix& h,const float* llr,uint8_t* bits,int batch,int it,float alpha){
+    (void)decode_avx512_detailed(h,llr,bits,batch,it,alpha,true);
 }
 }

@@ -34,7 +34,28 @@ public:
     // All decoding arithmetic and syndrome checks run on the GPU.
     void decode(const float* d_llr, uint8_t* d_bits, int batch,
                 int max_iterations, float alpha=0.8f,
-                cudaStream_t stream=0);
+                cudaStream_t stream=0, bool stop_early=true,
+                int* d_iterations_used=nullptr);
+    // Experimental API: caller owns device workspace buffers.
+    // d_work requires batch * codeword_bits() floats.
+    // d_messages requires batch * decoder_message_floats() floats.
+    size_t decoder_message_floats() const {
+        return size_t(edges_) * size_t(h_.z);
+    }
+
+    void decode_with_workspace(
+        const float* d_llr,
+        uint8_t* d_bits,
+        int batch,
+        int max_iterations,
+        float* d_work,
+        float* d_messages,
+        float alpha=0.8f,
+        cudaStream_t stream=0,
+        bool stop_early=true,
+        int* d_iterations_used=nullptr
+    );
+
     // Returns 1 per valid codeword, 0 otherwise (device output).
     void check(const uint8_t* d_codeword, uint8_t* d_valid,
                int batch, cudaStream_t stream=0);

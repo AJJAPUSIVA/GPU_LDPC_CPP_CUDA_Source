@@ -19,6 +19,17 @@ void decode_scalar(const Matrix& h, const float* llr, uint8_t* bits,
 bool avx512_available();
 void decode_avx512(const Matrix& h, const float* llr, uint8_t* bits,
                    int batch, int max_iterations, float alpha=0.8f);
+struct DecodeResult {
+    std::vector<int> iterations_used; // per codeword, including final full iteration
+    std::vector<uint8_t> syndrome_ok; // per codeword
+};
+// Instrumented decoder. stop_early=false forces exactly max_iterations updates.
+DecodeResult decode_scalar_detailed(const Matrix& h, const float* llr, uint8_t* bits,
+                                    int batch, int max_iterations, float alpha=0.8f,
+                                    bool stop_early=true);
+DecodeResult decode_avx512_detailed(const Matrix& h, const float* llr, uint8_t* bits,
+                                    int batch, int max_iterations, float alpha=0.8f,
+                                    bool stop_early=true);
 // Returns true for zero-syndrome bit vector.
 bool check(const Matrix& h, const uint8_t* bits);
 }

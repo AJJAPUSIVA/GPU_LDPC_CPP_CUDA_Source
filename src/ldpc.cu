@@ -93,7 +93,7 @@ __global__ void check_kernel(const int* offsets,const int* cols,const int* shift
 __global__ void decode_layered(const int* offsets,const int* cols,const int* shifts,
                                int R,int Z,int N,int edges,
                                const float* input,uint8_t* result,
-                               float* work,float* messages,int iterations,float alpha){
+                               float* work,float* messages,int iterations,float alpha,bool stop_early,int* iterations_used){
     int job=blockIdx.x,t=threadIdx.x;
     const float* llr=input+size_t(job)*N;
     uint8_t* out=result+size_t(job)*N;
@@ -127,18 +127,24 @@ __global__ void decode_layered(const int* offsets,const int* cols,const int* shi
             }
             __syncthreads();
         }
-        if(t==0)bad=0;
-        __syncthreads();
-        for(int i=t;i<R*Z;i+=blockDim.x){
-            int r=i/Z,k=i%Z,par=0;
-            for(int e=offsets[r];e<offsets[r+1];++e){
-                int idx=cols[e]*Z+(k+shifts[e])%Z;
-                par^=(L[idx]<0.f);
+        // Fixed mode does not need intermediate syndrome checks.
+        // All threads follow the same branch, so barriers remain safe.
+        if(stop_early){
+            if(t==0)bad=0;
+            __syncthreads();
+            for(int i=t;i<R*Z;i+=blockDim.x){
+                int r=i/Z,k=i%Z,par=0;
+                for(int e=offsets[r];e<offsets[r+1];++e){
+                    int idx=cols[e]*Z+(k+shifts[e])%Z;
+                    par^=(L[idx]<0.f);
+                }
+                if(par)atomicOr(&bad,1);
             }
-            if(par)atomicOr(&bad,1);
+            __syncthreads();
         }
+        if(t==0 && iterations_used) iterations_used[job]=it+1;
         __syncthreads();
-        if(!bad)break;
+        if(stop_early && !bad)break;
     }
     for(int i=t;i<N;i+=blockDim.x)out[i]=uint8_t(L[i]<0.f);
 }
@@ -152,16 +158,43 @@ void Codec::encode(const uint8_t* in,uint8_t* out,int batch,cudaStream_t stream)
     cuda_check(cudaGetLastError(),"encode kernel launch");
     cuda_check(cudaFreeAsync(matrix,stream),"free encoder workspace");
 }
-void Codec::decode(const float* in,uint8_t* out,int batch,int it,float alpha,cudaStream_t stream){
+void Codec::decode(const float* in,uint8_t* out,int batch,int it,float alpha,cudaStream_t stream,bool stop_early,int* d_iterations_used){
     if(batch<=0||it<1||it>100||alpha<=0.f||alpha>1.f)throw std::invalid_argument("invalid decoder arguments");
     float *L=nullptr,*msg=nullptr;
     cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&L),size_t(batch)*codeword_bits()*sizeof(float),stream),"decode LLR workspace");
     cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&msg),size_t(batch)*edges_*h_.z*sizeof(float),stream),"decode messages");
-    decode_layered<<<batch,256,0,stream>>>(d_offsets_,d_cols_,d_edgeshifts_,h_.rows,h_.z,codeword_bits(),edges_,in,out,L,msg,it,alpha);
+    decode_layered<<<batch,256,0,stream>>>(d_offsets_,d_cols_,d_edgeshifts_,h_.rows,h_.z,codeword_bits(),edges_,in,out,L,msg,it,alpha,stop_early,d_iterations_used);
     cuda_check(cudaGetLastError(),"decode kernel launch");
     cuda_check(cudaFreeAsync(L,stream),"free decoder LLR");
     cuda_check(cudaFreeAsync(msg,stream),"free decoder messages");
 }
+void Codec::decode_with_workspace(
+    const float* in, uint8_t* out,
+    int batch, int it,
+    float* work, float* messages,
+    float alpha, cudaStream_t stream,
+    bool stop_early, int* d_iterations_used)
+{
+    if(batch<=0 || it<1 || it>100 ||
+       alpha<=0.f || alpha>1.f ||
+       !in || !out || !work || !messages)
+        throw std::invalid_argument(
+            "invalid reusable-workspace decoder arguments"
+        );
+
+    decode_layered<<<batch,256,0,stream>>>(
+        d_offsets_, d_cols_, d_edgeshifts_,
+        h_.rows, h_.z, codeword_bits(), edges_,
+        in, out, work, messages,
+        it, alpha, stop_early, d_iterations_used
+    );
+
+    cuda_check(
+        cudaGetLastError(),
+        "reusable-workspace decoder launch"
+    );
+}
+
 void Codec::check(const uint8_t* bits,uint8_t* valid,int batch,cudaStream_t stream){
     if(batch<=0)throw std::invalid_argument("batch must be positive");
     check_kernel<<<batch,256,0,stream>>>(d_offsets_,d_cols_,d_edgeshifts_,h_.rows,h_.z,codeword_bits(),bits,valid);
