@@ -21,7 +21,7 @@ To retrieve the original research repo on your own machine: `./tools/clone_refer
 ## QC matrix format
 Plain whitespace-delimited: first line `rows cols kb Z`; then `rows*cols` signed integer shift values row-major. `-1` means zero block. Nonnegative values describe circulant parity-check positions `(rowZ+t, colZ+(t+shift)%Z)`. Here `cols-kb=rows`; all parity columns are included. The first `kb*Z` bits are the systematic message; the remaining bits are parity. **This representation is an expanded, fully chosen 3GPP lifting-set-specific base graph**, not the raw tables of i_ls-dependent shift candidates.
 
-Toy file `matrices/toy_qc_z4.txt` is provided solely for smoke testing.
+Toy file `matrices/toy_qc_z4.txt` is provided solely for smoke testing; **it is NOT a 5G NR base graph**. To test BG1/BG2, supply the exact matrices specified by TS 38.212 Tables 5.3.2-2 to 5.3.2-3 with valid `Z` and lifting-index choices. Full 3GPP tables are not bundled. The loader accepts any consistent nonsingular systematic QC parity-check matrix in this format.
 
 ## API
 See `include/nrldpc/ldpc.hpp` and `tests/test_codec.cu`. `Codec::encode`, `Codec::decode` and `Codec::check` take **CUDA device pointers** and support asynchronous stream launch. Bytes represent bits, *not* packed bits. LLR convention is positive for bit 0. Caller manages stream synchronization and device pointer lifetime.
@@ -36,3 +36,17 @@ See `include/nrldpc/ldpc.hpp` and `tests/test_codec.cu`. `Codec::encode`, `Codec
 
 ## Repo relationship
 The referenced repo benchmarks Sionna's Python/TF LDPC decoder, not a reusable C++ CUDA encoder. This source project is an independent CUDA implementation informed by its benchmarking approach; it does not claim to port proprietary hardware APIs or its TensorFlow internals.
+
+## New: dual-backend proof of concept
+
+See [docs/POC.md](docs/POC.md) for the AVX-512 CPU research decoder, optional CUDA build, architecture, branch plan, and validation limitations.
+
+For a CPU-only development build (works on macOS without NVIDIA CUDA):
+
+```bash
+cmake -S . -B build-cpu -DNRLDPC_ENABLE_CUDA=OFF
+cmake --build build-cpu -j
+ctest --test-dir build-cpu --output-on-failure
+```
+
+The CUDA-only LDPC execution path remains independent. To enable CUDA on an RTX 4090 Linux instance, pass `-DNRLDPC_ENABLE_CUDA=ON -DNRLDPC_ENABLE_CPU=OFF -DCMAKE_CUDA_ARCHITECTURES=89`.
