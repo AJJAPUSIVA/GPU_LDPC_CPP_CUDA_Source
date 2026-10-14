@@ -21,7 +21,7 @@ To retrieve the original research repo on your own machine: `./tools/clone_refer
 ## QC matrix format
 Plain whitespace-delimited: first line `rows cols kb Z`; then `rows*cols` signed integer shift values row-major. `-1` means zero block. Nonnegative values describe circulant parity-check positions `(rowZ+t, colZ+(t+shift)%Z)`. Here `cols-kb=rows`; all parity columns are included. The first `kb*Z` bits are the systematic message; the remaining bits are parity. **This representation is an expanded, fully chosen 3GPP lifting-set-specific base graph**, not the raw tables of i_ls-dependent shift candidates.
 
-Toy file `matrices/toy_qc_z4.txt` is provided solely for smoke testing; **it is NOT a 5G NR base graph**. To test BG1/BG2, supply the exact matrices specified by TS 38.212 Tables 5.3.2-2 to 5.3.2-3 with valid `Z` and lifting-index choices. Full 3GPP tables are not bundled. The loader accepts any consistent nonsingular systematic QC parity-check matrix in this format.
+Toy file `matrices/toy_qc_z4.txt` is provided solely for smoke testing.
 
 ## API
 See `include/nrldpc/ldpc.hpp` and `tests/test_codec.cu`. `Codec::encode`, `Codec::decode` and `Codec::check` take **CUDA device pointers** and support asynchronous stream launch. Bytes represent bits, *not* packed bits. LLR convention is positive for bit 0. Caller manages stream synchronization and device pointer lifetime.
